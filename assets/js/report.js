@@ -73,10 +73,15 @@ document.addEventListener("DOMContentLoaded", function() {
         return;
     }
 
-    document.querySelectorAll('.navbar-nav a[href^="#"]').forEach(link => {
+    document.querySelectorAll('.navbar-nav a').forEach(link => {
         link.addEventListener('click', function(e) {
-            e.preventDefault();
-            mostrarSeccion(this.getAttribute('href').substring(1));
+            const href = this.getAttribute('href') || '';
+            if (href.startsWith('#')) {
+                e.preventDefault();
+                mostrarSeccion(href.substring(1));
+            }
+            // Cerrar menú al seleccionar cualquier opción (móvil)
+            document.querySelector('.navbar-menu')?.classList.remove('active');
         });
     });
 
@@ -417,13 +422,16 @@ function getGraphKeys() {
 function generarGraficaDiarias(datos) {
     const ctx = document.getElementById('grafica-ganancias-diarias')?.getContext('2d');
     if (!ctx || !datos.length) return;
-    const { primary } = getGraphKeys();
+    const { primary, secondary } = getGraphKeys();
+    const datasets = [
+        { label: (primary === 'coin' ? 'Coin' : configTipo.graphLabel) + ' diario', data: datos.map(d => d[primary] || 0), backgroundColor: 'rgba(75, 192, 192, 0.2)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1 }
+    ];
+    if (secondary && secondary === 'premios' && (datos[0] || {})[secondary] !== undefined) {
+        datasets.push({ label: 'Premios', data: datos.map(d => d[secondary] || 0), backgroundColor: 'rgba(255, 99, 132, 0.2)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1 });
+    }
     new Chart(ctx, {
         type: 'bar',
-        data: {
-            labels: datos.map(d => d.fecha),
-            datasets: [{ label: configTipo.graphLabel + ' diario', data: datos.map(d => d[primary] || 0), backgroundColor: 'rgba(75, 192, 192, 0.2)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1 }]
-        },
+        data: { labels: datos.map(d => d.fecha), datasets },
         options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
 }
@@ -431,13 +439,16 @@ function generarGraficaDiarias(datos) {
 function generarGraficaSemanales(datos) {
     const ctx = document.getElementById('grafica-ganancias-semanales')?.getContext('2d');
     if (!ctx || !datos.length) return;
-    const { primary } = getGraphKeys();
+    const { primary, secondary } = getGraphKeys();
+    const datasets = [
+        { label: (primary === 'coin' ? 'Coin' : configTipo.graphLabel) + ' semanal', data: datos.map(d => d[primary] || 0), borderColor: 'rgba(153, 102, 255, 1)', fill: false }
+    ];
+    if (secondary && secondary === 'premios' && (datos[0] || {})[secondary] !== undefined) {
+        datasets.push({ label: 'Premios', data: datos.map(d => d[secondary] || 0), borderColor: 'rgba(255, 99, 132, 1)', fill: false });
+    }
     new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: datos.map(d => d.fecha),
-            datasets: [{ label: configTipo.graphLabel + ' semanal', data: datos.map(d => d[primary] || 0), borderColor: 'rgba(153, 102, 255, 1)', fill: false }]
-        },
+        data: { labels: datos.map(d => d.fecha), datasets },
         options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
 }
@@ -446,13 +457,15 @@ function generarGraficaMensuales(datos) {
     const ctx = document.getElementById('grafica-ganancias-mensuales')?.getContext('2d');
     if (!ctx || !datos.length) return;
     const { primary, secondary } = getGraphKeys();
-    const key = secondary && (datos[0] || {})[secondary] !== undefined ? secondary : primary;
+    const datasets = [
+        { label: (primary === 'coin' ? 'Coin' : configTipo.graphLabel) + ' mensual', data: datos.map(d => d[primary] || 0), backgroundColor: 'rgba(255, 206, 86, 0.2)', borderColor: 'rgba(255, 206, 86, 1)', borderWidth: 1 }
+    ];
+    if (secondary && secondary === 'premios' && (datos[0] || {})[secondary] !== undefined) {
+        datasets.push({ label: 'Premios', data: datos.map(d => d[secondary] || 0), backgroundColor: 'rgba(255, 99, 132, 0.2)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1 });
+    }
     new Chart(ctx, {
         type: 'bar',
-        data: {
-            labels: datos.map(d => d.fecha),
-            datasets: [{ label: configTipo.graphLabel + ' mensual', data: datos.map(d => d[key] || 0), backgroundColor: 'rgba(255, 206, 86, 0.2)', borderColor: 'rgba(255, 206, 86, 1)', borderWidth: 1 }]
-        },
+        data: { labels: datos.map(d => d.fecha), datasets },
         options: { responsive: true, scales: { y: { beginAtZero: true } } }
     });
 }
@@ -463,9 +476,9 @@ function generarGraficaComparativa(datos) {
     const { primary, secondary } = getGraphKeys();
     const hasSecondary = secondary && (datos[0] || {})[secondary] !== undefined;
     const datasets = [
-        { label: primary, data: datos.map(d => d[primary] || 0), borderColor: 'rgba(75, 192, 192, 1)', fill: false }
+        { label: primary === 'coin' ? 'Coin' : primary, data: datos.map(d => d[primary] || 0), borderColor: 'rgba(75, 192, 192, 1)', fill: false }
     ];
-    if (hasSecondary) datasets.push({ label: secondary, data: datos.map(d => d[secondary] || 0), borderColor: 'rgba(255, 99, 132, 1)', fill: false });
+    if (hasSecondary) datasets.push({ label: secondary === 'premios' ? 'Premios' : secondary, data: datos.map(d => d[secondary] || 0), borderColor: 'rgba(255, 99, 132, 1)', fill: false });
     new Chart(ctx, {
         type: 'line',
         data: { labels: datos.map(d => d.fecha), datasets },

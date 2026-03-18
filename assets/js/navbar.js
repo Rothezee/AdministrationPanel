@@ -40,16 +40,13 @@ window.addEventListener('mouseup', (event) => {
 })
 
 function handleSmallScreens() {
-  document.querySelector('.navbar-toggler')
-    .addEventListener('click', () => {
-      let navbarMenu = document.querySelector('.navbar-menu')
+  const toggler = document.querySelector('.navbar-toggler')
+  const navbarMenu = document.querySelector('.navbar-menu')
+  if (!toggler || !navbarMenu) return
 
-      if (navbarMenu.classList.contains('active')) {
-        navbarMenu.classList.remove('active')
-      } else {
-        navbarMenu.classList.add('active')
-      }
-    })
+  toggler.addEventListener('click', () => {
+    navbarMenu.classList.toggle('active')
+  })
 }
 
 handleSmallScreens();

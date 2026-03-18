@@ -145,17 +145,18 @@ window.REPORT_CONFIG = { deviceId: <?php echo json_encode($deviceId); ?>, idDisp
 
     <section id="graficas" class="seccion">
         <h2>Gráficas comparativas</h2>
+        <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;">Coin y Premios (referencia para reponer peluches)</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-top:1rem;">
             <div>
-                <h3>Coin diario</h3>
+                <h3>Coin y Premios diarios</h3>
                 <canvas id="grafica-ganancias-diarias"></canvas>
             </div>
             <div>
-                <h3>Coin semanal</h3>
+                <h3>Coin y Premios semanales</h3>
                 <canvas id="grafica-ganancias-semanales"></canvas>
             </div>
             <div>
-                <h3>Premios mensual</h3>
+                <h3>Coin y Premios mensuales</h3>
                 <canvas id="grafica-ganancias-mensuales"></canvas>
             </div>
             <div>
@@ -169,6 +170,7 @@ window.REPORT_CONFIG = { deviceId: <?php echo json_encode($deviceId); ?>, idDisp
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/plugins/monthSelect/monthSelect.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="../../assets/js/navbar.js"></script>
 <script src="../../assets/js/report.js"></script>
 </body>
 </html>

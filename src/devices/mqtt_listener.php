@@ -1,6 +1,10 @@
 <?php
 /**
  * MQTT Listener — Escucha maquinas/* y reenvía al api_receptor.
+ */
+date_default_timezone_set('America/Argentina/Buenos_Aires');
+
+/**
  * Formato ESP32 Gold Digger: { device_id, dato1, dato2, dato3, dato4 }
  * Formato ESP32 Heartbeat:   { device_id, status }
  */
@@ -118,6 +122,12 @@ function transform_esp32_to_api($topic, $message, $default_dni) {
 }
 
 $callback_general = function ($topic, $message) use ($backend_url_api, &$last_payload, $MQTT_DEFAULT_DNI) {
+    // Normalizar: string, trim, quitar BOM y null bytes (a veces llegan del broker/ESP)
+    $message = trim((string) $message);
+    if (substr($message, 0, 3) === "\xEF\xBB\xBF") $message = substr($message, 3);
+    $message = preg_replace('/\x00/', '', $message);
+    if ($message === '') return;
+
     if ($message === $last_payload) return;
     $last_payload = $message;
 
@@ -130,8 +140,9 @@ $callback_general = function ($topic, $message) use ($backend_url_api, &$last_pa
 
     $raw = json_decode($message, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
+        $err = json_last_error_msg();
         $preview = strlen($message) > 80 ? substr($message, 0, 80) . '...' : $message;
-        debug_log("  [SKIP] JSON inválido | raw: " . $preview);
+        debug_log("  [SKIP] JSON inválido ($err) | len=" . strlen($message) . " | raw: " . $preview);
         return;
     }
 
