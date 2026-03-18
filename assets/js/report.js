@@ -171,7 +171,7 @@ function cargarCierresDiarios() {
                     ? subcierresData.partial_reports
                     : (subcierresData?.reports && Array.isArray(subcierresData.reports)) ? subcierresData.reports : [];
                 datosDiarios = cierres.map(c => ({
-                    fecha: (c.timestamp || '').split(' ')[0],
+                    fecha: c.fecha_dia || (c.timestamp || '').split(' ')[0],
                     fichas: c.fichas, dinero: c.dinero,
                     p1: c.p1, p2: c.p2, p3: c.p3,
                     fichas_devolucion: c.fichas_devolucion, fichas_normales: c.fichas_normales, fichas_promocion: c.fichas_promocion
@@ -205,16 +205,18 @@ function fusionarYRenderizarCierresExpendedora(cierres, subcierres) {
 
     const datosAgrupados = {};
     cierres.forEach(cierre => {
-        if (cierre && typeof cierre.timestamp === 'string') {
-            const fecha = cierre.timestamp.split(' ')[0];
-            if (!datosAgrupados[fecha]) datosAgrupados[fecha] = { cierre: null, subcierres: [] };
-            datosAgrupados[fecha].cierre = cierre;
+        if (cierre) {
+            const fecha = cierre.fecha_dia || (typeof cierre.timestamp === 'string' ? cierre.timestamp.split(' ')[0] : null);
+            if (fecha) {
+                if (!datosAgrupados[fecha]) datosAgrupados[fecha] = { cierre: null, subcierres: [] };
+                datosAgrupados[fecha].cierre = cierre;
+            }
         }
     });
     subcierres.forEach(sub => {
-        const fechaStr = sub.created_at || sub.timestamp || sub.fecha;
-        if (sub && typeof fechaStr === 'string') {
-            const fecha = fechaStr.split(' ')[0];
+        // Agrupar por día que inició el turno (fecha_dia o fecha_apertura_turno), nunca por día que terminó (created_at)
+        const fecha = sub.fecha_dia || (typeof sub.fecha_apertura_turno === 'string' ? sub.fecha_apertura_turno.split(' ')[0] : null) || (typeof (sub.created_at || sub.timestamp || sub.fecha) === 'string' ? (sub.created_at || sub.timestamp || sub.fecha).split(' ')[0] : null);
+        if (fecha) {
             if (!datosAgrupados[fecha]) datosAgrupados[fecha] = { cierre: null, subcierres: [] };
             datosAgrupados[fecha].subcierres.push(sub);
         }

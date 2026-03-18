@@ -3,9 +3,8 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-require_once dirname(__DIR__, 2) . '/conn/connection.php';
+require_once dirname(__DIR__, 2) . '/conn/config.php';
 
-// Verificar si se ha proporcionado un device_id
 if (!isset($_GET['device_id'])) {
     header('Content-Type: application/json');
     die(json_encode(["error" => "device_id no proporcionado."]));
@@ -14,29 +13,35 @@ if (!isset($_GET['device_id'])) {
 $device_id = $_GET['device_id'];
 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
 $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
- 
-// Consulta para obtener los datos de la máquina de tickets
-$sql = "SELECT id, device_id, dato1, dato2, timestamp FROM datos WHERE device_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?";
-$stmt = $conn->prepare($sql);
-if (!$stmt) {
+
+// Resolver id_dispositivo desde codigo_hardware
+$stmtDisp = $conn->prepare("SELECT id_dispositivo FROM dispositivos WHERE LOWER(codigo_hardware) = LOWER(:id) LIMIT 1");
+$stmtDisp->execute([':id' => $device_id]);
+$disp = $stmtDisp->fetch(PDO::FETCH_ASSOC);
+if (!$disp) {
     header('Content-Type: application/json');
-    die(json_encode(["error" => "Prepare failed: " . $conn->error]));
+    echo json_encode(["reports" => []]);
+    exit;
 }
-$stmt->bind_param("sii", $device_id, $limit, $offset);
+
+$id_dispositivo = (int)$disp['id_dispositivo'];
+
+$sql = "SELECT fecha_registro, fichas, dinero FROM telemetria_expendedoras 
+        WHERE id_dispositivo = :id ORDER BY fecha_registro DESC LIMIT :limit OFFSET :offset";
+$stmt = $conn->prepare($sql);
+$stmt->bindValue(':id', $id_dispositivo, PDO::PARAM_INT);
+$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 $stmt->execute();
-$result = $stmt->get_result();
 
 $reports = [];
-while ($row = $result->fetch_assoc()) {
-    $reports[] = $row;
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $reports[] = [
+        'timestamp' => $row['fecha_registro'],
+        'dato1'     => (int)$row['fichas'],
+        'dato2'     => (float)$row['dinero']
+    ];
 }
 
-$response = [
-    "reports" => $reports
-];
-
 header('Content-Type: application/json');
-echo json_encode($response);
-$stmt->close();
-$conn->close();
-?>
+echo json_encode(["reports" => $reports]);
