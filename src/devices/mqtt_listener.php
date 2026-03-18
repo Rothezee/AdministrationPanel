@@ -75,8 +75,9 @@ function send_to_backend($url, $json_data) {
     debug_log("-> Envío a API | HTTP: $http_code | Resp: " . trim($response));
 }
 
-// Filtro para evitar duplicados en el mismo segundo
+// Filtro para evitar duplicados (mismo mensaje en <3 seg). Heartbeats son idénticos cada 10 min, no deduplicar por contenido solo.
 $last_payload = "";
+$last_payload_time = 0;
 
 // Extrae device_id del tópico: maquinas/ESP32_005/datos → ESP32_005
 function device_id_from_topic($topic) {
@@ -121,15 +122,19 @@ function transform_esp32_to_api($topic, $message, $default_dni) {
     ];
 }
 
-$callback_general = function ($topic, $message) use ($backend_url_api, &$last_payload, $MQTT_DEFAULT_DNI) {
+$callback_general = function ($topic, $message) use ($backend_url_api, &$last_payload, &$last_payload_time, $MQTT_DEFAULT_DNI) {
     // Normalizar: string, trim, quitar BOM y null bytes (a veces llegan del broker/ESP)
     $message = trim((string) $message);
     if (substr($message, 0, 3) === "\xEF\xBB\xBF") $message = substr($message, 3);
     $message = preg_replace('/\x00/', '', $message);
     if ($message === '') return;
 
-    if ($message === $last_payload) return;
+    // Dedup: solo saltar si el MISMO mensaje llegó hace menos de 3 seg (evita duplicados MQTT).
+    // Los heartbeats son idénticos cada 10 min; antes se filtraban incorrectamente.
+    $now = time();
+    if ($message === $last_payload && ($now - $last_payload_time) < 3) return;
     $last_payload = $message;
+    $last_payload_time = $now;
 
     // maquinas/status: ESP publica estado (online/offline o 1/0). No es telemetría, ignorar sin log.
     if ($topic === 'maquinas/status' && in_array($message, ['online', 'offline', '1', '0'], true)) {
