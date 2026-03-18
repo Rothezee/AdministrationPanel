@@ -1,0 +1,25 @@
+# Credenciales (usar config.example como plantilla)
+conn/config.php
+conn/connection.php
+
+# Dependencias
+vendor/
+node_modules/
+
+# Logs y archivos temporales
+*.log
+log_mqtt.txt
+src/devices/log_mqtt.txt
+src/devices/mqtt_listener.lock
+src/mercadopago/*.log
+src/mercadopago/*_log.txt
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# PHP
+error_log
+*.cache
