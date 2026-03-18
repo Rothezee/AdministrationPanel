@@ -1,13 +1,14 @@
 <?php
 /**
  * MQTT Listener — Escucha maquinas/* y reenvía al api_receptor.
+ *
+ * FORMATO ESP32 Gigga (API, esperado):
+ *   Heartbeat: { "action":1, "dni_admin":"00000000", "codigo_hardware":"Grua_123", "tipo_maquina":2 }
+ *   Datos:     { "action":2, "dni_admin":"...", "codigo_hardware":"...", "tipo_maquina":2, "payload":{ "pago", "coin", "premios", "banco" } }
+ *
+ * FORMATO legacy (device_id, dato1..4): se transforma automáticamente.
  */
 date_default_timezone_set('America/Argentina/Buenos_Aires');
-
-/**
- * Formato ESP32 Gold Digger: { device_id, dato1, dato2, dato3, dato4 }
- * Formato ESP32 Heartbeat:   { device_id, status }
- */
 set_time_limit(0); 
 ignore_user_abort(true);
 
@@ -85,6 +86,43 @@ function device_id_from_topic($topic) {
     return null;
 }
 
+/**
+ * Valida y normaliza formato API del ESP Gigga.
+ * Retorna array listo para api_receptor o null si no cumple.
+ */
+function parse_api_format(array $raw, $default_dni) {
+    $action = isset($raw['action']) ? (int)$raw['action'] : null;
+    if ($action !== 1 && $action !== 2) return null;
+
+    $codigo = $raw['codigo_hardware'] ?? $raw['device_id'] ?? $raw['deviceId'] ?? $raw['Device_ID'] ?? null;
+    $dni = $raw['dni_admin'] ?? null;
+    $tipo = isset($raw['tipo_maquina']) ? (int)$raw['tipo_maquina'] : null;
+
+    if (!$codigo || !is_string($codigo) || trim($codigo) === '') return null;
+    if (!$dni || !is_string($dni)) return null;
+    if ($tipo === null || $tipo < 1 || $tipo > 4) return null;
+
+    $base = [
+        'action' => $action,
+        'dni_admin' => (string)$dni,
+        'codigo_hardware' => trim((string)$codigo),
+        'tipo_maquina' => $tipo
+    ];
+
+    if ($action === 1) return $base; // Heartbeat: solo estos campos
+
+    // Telemetría (action=2): requiere payload
+    $payload = $raw['payload'] ?? null;
+    if (!is_array($payload)) return null;
+    $base['payload'] = [
+        'pago'    => (int)($payload['pago'] ?? $payload['dato1'] ?? 0),
+        'coin'    => (int)($payload['coin'] ?? $payload['dato2'] ?? 0),
+        'premios' => (int)($payload['premios'] ?? $payload['dato3'] ?? 0),
+        'banco'   => (int)($payload['banco'] ?? $payload['dato4'] ?? 0)
+    ];
+    return $base;
+}
+
 // Transforma formato ESP32 Gold Digger al formato esperado por api_receptor
 function transform_esp32_to_api($topic, $message, $default_dni) {
     $raw = json_decode($message, true);
@@ -129,12 +167,14 @@ $callback_general = function ($topic, $message) use ($backend_url_api, &$last_pa
     $message = preg_replace('/\x00/', '', $message);
     if ($message === '') return;
 
-    // Dedup: solo saltar si el MISMO mensaje llegó hace menos de 3 seg (evita duplicados MQTT).
-    // Los heartbeats son idénticos cada 10 min; antes se filtraban incorrectamente.
-    $now = time();
-    if ($message === $last_payload && ($now - $last_payload_time) < 3) return;
-    $last_payload = $message;
-    $last_payload_time = $now;
+    // Dedup: solo para NO-heartbeat; los heartbeats siempre se procesan
+    $is_heartbeat_topic = (strpos($topic, 'heartbeat') !== false);
+    if (!$is_heartbeat_topic) {
+        $now = time();
+        if ($message === $last_payload && ($now - $last_payload_time) < 3) return;
+        $last_payload = $message;
+        $last_payload_time = $now;
+    }
 
     // maquinas/status: ESP publica estado (online/offline o 1/0). No es telemetría, ignorar sin log.
     if ($topic === 'maquinas/status' && in_array($message, ['online', 'offline', '1', '0'], true)) {
@@ -145,27 +185,55 @@ $callback_general = function ($topic, $message) use ($backend_url_api, &$last_pa
 
     $raw = json_decode($message, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
+        // Fallback: tópico heartbeat — enviar igual (device_id desde tópico)
+        if (strpos($topic, 'heartbeat') !== false) {
+            $device_id = device_id_from_topic($topic);
+            if ($device_id) {
+                $hb = ['action' => 1, 'dni_admin' => $MQTT_DEFAULT_DNI, 'codigo_hardware' => $device_id, 'tipo_maquina' => 2];
+                debug_log("  [HEARTBEAT] JSON inválido, usando device_id del tópico: $device_id");
+                send_to_backend($backend_url_api, json_encode($hb));
+                return;
+            }
+        }
         $err = json_last_error_msg();
         $preview = strlen($message) > 80 ? substr($message, 0, 80) . '...' : $message;
         debug_log("  [SKIP] JSON inválido ($err) | len=" . strlen($message) . " | raw: " . $preview);
         return;
     }
 
-    // Si ya viene en formato API (action, codigo_hardware, etc.), reenviar tal cual
-    if (isset($raw['action'], $raw['codigo_hardware'], $raw['dni_admin'], $raw['tipo_maquina'])) {
-        send_to_backend($backend_url_api, $message);
+    // 1. Formato API (ESP Gigga): validación estricta
+    $api = parse_api_format($raw, $MQTT_DEFAULT_DNI);
+    if ($api) {
+        send_to_backend($backend_url_api, json_encode($api));
         return;
     }
 
-    // Formato legacy (device_id, dato1..4): transformar; device_id puede venir del tópico
+    // 2. Formato legacy (device_id, dato1..4): transformar; device_id puede venir del tópico
     $api_payload = transform_esp32_to_api($topic, $message, $MQTT_DEFAULT_DNI);
-    if (!$api_payload) {
-        $preview = strlen($message) > 80 ? substr($message, 0, 80) . '...' : $message;
-        debug_log("  [SKIP] Sin device_id ni formato API | raw: " . $preview);
+    if ($api_payload) {
+        send_to_backend($backend_url_api, json_encode($api_payload));
         return;
     }
 
-    send_to_backend($backend_url_api, json_encode($api_payload));
+    // Fallback: tópico heartbeat (maquinas/XXX/heartbeat) — enviar heartbeat aunque el JSON falle
+    // El ESP a veces envía formato corrupto o distinto; el device_id siempre viene del tópico
+    if (strpos($topic, 'heartbeat') !== false) {
+        $device_id = device_id_from_topic($topic);
+        if ($device_id) {
+            $hb = [
+                'action' => 1,
+                'dni_admin' => $MQTT_DEFAULT_DNI,
+                'codigo_hardware' => $device_id,
+                'tipo_maquina' => 2
+            ];
+            debug_log("  [HEARTBEAT fallback] device_id desde tópico: $device_id");
+            send_to_backend($backend_url_api, json_encode($hb));
+            return;
+        }
+    }
+
+    $preview = strlen($message) > 80 ? substr($message, 0, 80) . '...' : $message;
+    debug_log("  [SKIP] Sin device_id ni formato API | raw: " . $preview);
 };
 
 $run_forever = !in_array('-t', $GLOBALS['argv'] ?? []) && !in_array('--timed', $GLOBALS['argv'] ?? []);
