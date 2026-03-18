@@ -155,6 +155,7 @@ function calcularCierresDiarios(reports) {
         const cierre = configTipo.calcCierre(primer, ultimo, list.length);
         return { fecha, ...cierre };
     });
+    datosDiarios.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 }
 
 function cargarCierresDiarios() {

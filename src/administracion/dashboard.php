@@ -10,6 +10,7 @@ $isSuperAdmin = ($_SESSION['username'] === 'admin');
 require_once dirname(__DIR__, 2) . '/conn/config.php';
 $subscriptionBanner = null;
 $navbarBadge = null;
+$subscriptionData = null;
 
 if (!empty($_SESSION['id_admin'])) {
   $stmt = $conn->prepare("
@@ -57,6 +58,32 @@ if (!empty($_SESSION['id_admin'])) {
         $navbarBadge = 'Suscripción próxima a vencer';
       }
     }
+    $subscriptionData = [
+      'tipo' => $info['subscription_period'] === 'anual' ? 'Anual' : 'Mensual',
+      'fecha_activacion' => $info['used_at'] ?? null,
+      'dias_uso' => $info['dias_uso'] ?? null,
+      'paused' => (bool)($info['paused'] ?? false),
+      'limite' => ($info['subscription_period'] === 'anual') ? 365 : 30,
+      'estado' => '-',
+      'dias_restantes' => null,
+    ];
+    if ($info['is_used'] && $info['dias_uso'] !== null) {
+      $d = (int)$info['dias_uso'];
+      $l = $subscriptionData['limite'];
+      if ($info['paused']) {
+        $subscriptionData['estado'] = 'Pausado';
+      } elseif ($d > $l + 5) {
+        $subscriptionData['estado'] = 'Pausado (vencido)';
+      } elseif ($d > $l) {
+        $subscriptionData['estado'] = 'En periodo de gracia';
+        $subscriptionData['dias_restantes'] = max(0, ($l + 5) - $d);
+      } else {
+        $subscriptionData['estado'] = 'Al día';
+        $subscriptionData['dias_restantes'] = $l - $d;
+      }
+    } elseif (!$info['is_used']) {
+      $subscriptionData['estado'] = 'Pendiente de activación';
+    }
   }
 }
 ?>
@@ -66,6 +93,7 @@ if (!empty($_SESSION['id_admin'])) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="../../assets/css/style.css">
+  <link rel="icon" type="image/png" href="../../img/LOGO BONUS.png">
   <title>Panel de Control</title>
 </head>
 <body>
@@ -73,9 +101,12 @@ if (!empty($_SESSION['id_admin'])) {
 <!-- ════════════════════════════════════════ NAVBAR -->
 <header>
   <nav class="navbar">
-    <div class="navbar-brand">
-      <img src="../../img/ChatGPT Image 1 abr 2025, 21_59_11-Photoroom.png" alt="Logo" id="logo">
-      <span class="brand-name">Panel de Control <span class="brand-sub">Gestión de Máquinas</span></span>
+    <div class="navbar-left">
+      <button class="btn-icon" id="btn-sidebar-toggle" title="Abrir/cerrar menú">☰</button>
+      <div class="navbar-brand">
+        <img src="../../img/LOGO BONUS.png" alt="Logo" id="logo">
+        <span class="brand-name">Panel de Control <span class="brand-sub">Gestión de Máquinas</span></span>
+      </div>
     </div>
     <div style="display:flex;align-items:center;gap:0.5rem;">
       <?php if ($navbarBadge): ?>
@@ -83,12 +114,6 @@ if (!empty($_SESSION['id_admin'])) {
           <?php echo htmlspecialchars($navbarBadge, ENT_QUOTES, 'UTF-8'); ?>
         </span>
       <?php endif; ?>
-      <?php if ($isSuperAdmin): ?>
-      <a href="./admin_invites.php" class="btn-secondary" style="text-decoration:none;">Claves &amp; suscripciones</a>
-      <?php endif; ?>
-      <button class="btn-danger-outline" id="btn-borrado-global" title="Eliminar registros de todas las máquinas">
-        🗑 Limpiar datos
-      </button>
       <button class="navbar-toggler" id="navbar-toggler">
         <span></span><span></span><span></span>
       </button>
@@ -101,8 +126,33 @@ if (!empty($_SESSION['id_admin'])) {
   </nav>
 </header>
 
-<!-- ════════════════════════════════════════ MAIN -->
-<main id="dashboard-root">
+<!-- ════════════════════════════════════════ LAYOUT + SIDEBAR -->
+<div class="app-layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="../../img/LOGO BONUS.png" alt="Logo" class="sidebar-logo">
+      <span class="sidebar-title">Menú</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="dashboard.php" class="sidebar-link active">📊 Dashboard</a>
+      <div class="sidebar-section">
+        <button class="sidebar-link sidebar-toggle" data-target="admin-menu">📁 Administración</button>
+        <ul class="sidebar-submenu open" id="admin-menu">
+          <li><button class="sidebar-link" id="btn-borrado-global">🗑 Limpiar datos (global)</button></li>
+          <li><button class="sidebar-link" id="btn-borrar-maquina">🗑 Borrar máquina</button></li>
+        </ul>
+      </div>
+      <?php if ($isSuperAdmin): ?>
+      <a href="./admin_invites.php" class="sidebar-link">🔑 Claves &amp; suscripciones</a>
+      <?php else: ?>
+      <button class="sidebar-link" id="btn-suscripcion">📋 Suscripción</button>
+      <?php endif; ?>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn-icon sidebar-close" id="sidebar-close" title="Cerrar menú">✕</button>
+    </div>
+  </aside>
+  <main class="main-content">
   <?php if ($subscriptionBanner): ?>
     <section style="max-width:800px;margin:0 auto 1rem;">
       <div class="delete-preview-msg <?php echo $subscriptionBanner['type']==='danger' ? 'delete-preview-danger' : 'delete-preview-warn'; ?>">
@@ -111,8 +161,9 @@ if (!empty($_SESSION['id_admin'])) {
       </div>
     </section>
   <?php endif; ?>
-  <!-- Cards generadas dinámicamente por main.js -->
-</main>
+  <div id="dashboard-root"><!-- Cards generadas dinámicamente por main.js --></div>
+  </main>
+</div>
 
 <!-- ════════════════════════════════════════ MODAL BORRADO GLOBAL -->
 <div id="global-delete-modal" class="modal-overlay" style="display:none">
@@ -144,8 +195,120 @@ if (!empty($_SESSION['id_admin'])) {
   </div>
 </div>
 
+<!-- ════════════════════════════════════════ MODAL SUSCRIPCIÓN -->
+<div id="subscription-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <h2 class="modal-title">📋 Mi suscripción</h2>
+      <button class="modal-close" id="subscription-modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="subscription-modal-body">
+      <?php if ($subscriptionData): ?>
+      <div class="subscription-detail">
+        <div class="subscription-row"><span class="subscription-label">Tipo</span><span><?php echo htmlspecialchars($subscriptionData['tipo'], ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <div class="subscription-row"><span class="subscription-label">Fecha de activación</span><span><?php echo htmlspecialchars($subscriptionData['fecha_activacion'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <div class="subscription-row"><span class="subscription-label">Días de uso</span><span><?php echo $subscriptionData['dias_uso'] !== null ? (int)$subscriptionData['dias_uso'] . ' día(s)' : '-'; ?></span></div>
+        <div class="subscription-row"><span class="subscription-label">Estado</span><span><?php echo htmlspecialchars($subscriptionData['estado'], ENT_QUOTES, 'UTF-8'); ?></span></div>
+        <?php if ($subscriptionData['dias_restantes'] !== null && $subscriptionData['estado'] === 'Al día'): ?>
+        <div class="subscription-row"><span class="subscription-label">Días restantes</span><span><?php echo (int)$subscriptionData['dias_restantes']; ?> día(s)</span></div>
+        <?php elseif ($subscriptionData['dias_restantes'] !== null && $subscriptionData['estado'] === 'En periodo de gracia'): ?>
+        <div class="subscription-row"><span class="subscription-label">Días de gracia restantes</span><span><?php echo (int)$subscriptionData['dias_restantes']; ?> día(s)</span></div>
+        <?php endif; ?>
+      </div>
+      <?php else: ?>
+      <p style="color:var(--text-muted);">No hay datos de suscripción.</p>
+      <?php endif; ?>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="subscription-modal-cancel">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ MODAL BORRAR MÁQUINA -->
+<div id="delete-device-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-header">
+      <h2 class="modal-title" style="color:var(--red)">🗑 Borrar máquina</h2>
+      <button class="modal-close" id="delete-device-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.82rem;color:var(--text-secondary);line-height:1.6;margin-bottom:1rem">
+        Elimina la máquina y <strong>todos sus reportes</strong>. Esta acción no se puede deshacer.
+      </p>
+      <div id="delete-device-list" class="delete-device-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="delete-device-cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script src="../../assets/js/main.js"></script>
 <script>
+  /* ── Sidebar (mismo botón abre/cierra) ── */
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('btn-sidebar-toggle').addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.getElementById('sidebar-close').addEventListener('click', () => sidebar.classList.remove('open'));
+  document.querySelectorAll('.sidebar-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (target) target.classList.toggle('open');
+    });
+  });
+
+  /* ── Modal suscripción ── */
+  const subModal = document.getElementById('subscription-modal');
+  const btnSub = document.getElementById('btn-suscripcion');
+  if (btnSub) {
+    btnSub.addEventListener('click', () => { subModal.style.display = 'flex'; });
+  }
+  document.getElementById('subscription-modal-close')?.addEventListener('click', () => { subModal.style.display = 'none'; });
+  document.getElementById('subscription-modal-cancel')?.addEventListener('click', () => { subModal.style.display = 'none'; });
+  subModal?.addEventListener('click', e => { if (e.target === subModal) subModal.style.display = 'none'; });
+
+  /* ── Modal borrar máquina ── */
+  const deviceModal = document.getElementById('delete-device-modal');
+  document.getElementById('btn-borrar-maquina').addEventListener('click', () => {
+    fetch('../devices/get_all_devices.php').then(r => r.json()).then(data => {
+      const list = document.getElementById('delete-device-list');
+      list.innerHTML = '';
+      (data.devices || []).forEach(d => {
+        const row = document.createElement('div');
+        row.className = 'delete-device-row';
+        row.innerHTML = `<span>${escapeHtml(d.device_id)}</span><button class="btn-danger btn-sm" data-device="${escapeHtml(d.device_id)}">Eliminar</button>`;
+        row.querySelector('button').addEventListener('click', function() {
+          const id = this.dataset.device;
+          if (!confirm(`¿Eliminar la máquina ${id} y todos sus reportes?`)) return;
+          this.disabled = true;
+          fetch('delete_device.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_id: id }) })
+            .then(r => r.json())
+            .then(res => {
+              if (res.success) {
+                row.remove();
+                if (typeof loadConfig === 'function' && typeof saveConfig === 'function') {
+                  const cfg = loadConfig();
+                  delete cfg[id];
+                  saveConfig(cfg);
+                }
+                if (typeof buildDashboard === 'function') buildDashboard();
+              }
+              else alert('Error: ' + (res.error || 'desconocido'));
+            })
+            .catch(() => alert('Error de red'))
+            .finally(() => { this.disabled = false; });
+        });
+        list.appendChild(row);
+      });
+      if (list.children.length === 0) list.innerHTML = '<p style="color:var(--text-muted)">No hay máquinas registradas.</p>';
+      deviceModal.style.display = 'flex';
+    });
+  });
+  document.getElementById('delete-device-close').addEventListener('click', () => { deviceModal.style.display = 'none'; });
+  document.getElementById('delete-device-cancel').addEventListener('click', () => { deviceModal.style.display = 'none'; });
+  deviceModal.addEventListener('click', e => { if (e.target === deviceModal) deviceModal.style.display = 'none'; });
+  function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
   /* ── Navbar mobile ── */
   document.getElementById('navbar-toggler').addEventListener('click', () => {
     document.getElementById('open-navbar1').classList.toggle('active');
@@ -184,7 +347,7 @@ if (!empty($_SESSION['id_admin'])) {
     info.textContent = '';
 
     // Contar registros de cada máquina hasta esa fecha
-    fetch(`get_all_devices.php`)
+    fetch(`../devices/get_all_devices.php`)
       .then(r => r.json())
       .then(async devData => {
         if (!devData.devices) throw new Error('Sin datos');
@@ -193,7 +356,7 @@ if (!empty($_SESSION['id_admin'])) {
         const proms = devData.devices.map(d =>
           fetch(`get_report.php?device_id=${encodeURIComponent(d.device_id)}&fechaFin=${hasta}`)
             .then(r => r.json())
-            .then(data => { total += (data.reports || []).length; })
+            .then(data => { total += (data.count ?? (data.reports || []).length); })
             .catch(() => {})
         );
         await Promise.all(proms);

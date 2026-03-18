@@ -97,6 +97,7 @@ $keys = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claves &amp; suscripciones</title>
     <link rel="stylesheet" href="../../assets/css/style.css">
+    <link rel="icon" type="image/png" href="../../img/LOGO BONUS.png">
 </head>
 <body>
     <main style="max-width:900px;margin:2rem auto;padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);">

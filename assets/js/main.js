@@ -327,6 +327,7 @@ function buildCard(deviceId, info) {
           <span class="status" id="${statusElId(deviceId)}">Offline</span>
         </div>
         <button class="btn-config" title="Configurar" onclick="openConfigModal('${deviceId.replace(/'/g,"\\'")}')">⚙</button>
+        <button class="btn-config btn-delete-device" title="Borrar máquina" data-device="${deviceId.replace(/"/g,'&quot;')}">🗑</button>
       </div>
     </div>
     <div class="card-divider"></div>
@@ -660,6 +661,37 @@ function setBancoValue(bancoId, value) {
   const num = parseFloat(value);
   card.classList.toggle('banco-alert', !isNaN(num) && num <= -10);
 }
+
+/* ══════════════════════════════════════════════════
+   DELETE DEVICE (from card)
+══════════════════════════════════════════════════ */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-delete-device');
+  if (!btn) return;
+  e.preventDefault();
+  const deviceId = btn.dataset.device;
+  if (!deviceId) return;
+  if (!confirm(`¿Eliminar la máquina ${deviceId} y todos sus reportes? Esta acción no se puede deshacer.`)) return;
+  btn.disabled = true;
+  fetch('delete_device.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: deviceId })
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.success) {
+        const cfg = loadConfig();
+        delete cfg[deviceId];
+        saveConfig(cfg);
+        buildDashboard();
+      } else {
+        alert('Error: ' + (res.error || 'desconocido'));
+      }
+    })
+    .catch(() => alert('Error de red'))
+    .finally(() => { btn.disabled = false; });
+});
 
 /* ══════════════════════════════════════════════════
    KEYBOARD: close modal with Escape

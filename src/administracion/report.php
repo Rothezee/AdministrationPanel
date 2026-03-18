@@ -52,6 +52,7 @@ $h = $headers[$tipo] ?? $headers['maquina'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="../../assets/css/style.css">
+    <link rel="icon" type="image/png" href="../../img/LOGO BONUS.png">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <title>Reporte <?php echo htmlspecialchars(ucfirst($tipo), ENT_QUOTES, 'UTF-8'); ?> <?php echo htmlspecialchars($deviceId, ENT_QUOTES, 'UTF-8'); ?></title>
 </head>
@@ -73,6 +74,7 @@ window.REPORT_CONFIG = { deviceId: <?php echo json_encode($deviceId); ?>, idDisp
                     <li><a href="#semanales">Cierres Semanales</a></li>
                     <li><a href="#mensuales">Cierres Mensuales</a></li>
                     <li><a href="#graficas">Gráficas</a></li>
+                    <li><a href="#borrar-reportes">🗑 Borrar reportes</a></li>
                 </ul>
             </div>
         </div>
@@ -143,6 +145,24 @@ window.REPORT_CONFIG = { deviceId: <?php echo json_encode($deviceId); ?>, idDisp
         </div>
     </section>
 
+    <section id="borrar-reportes" class="seccion">
+        <h2>Borrar reportes de esta máquina</h2>
+        <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:1rem;">
+            Elimina los registros de esta máquina hasta la fecha indicada (inclusive). Los datos más antiguos se borrarán.
+        </p>
+        <div class="delete-form" style="max-width:400px;">
+            <div class="form-group">
+                <label for="device-del-hasta">Eliminar registros hasta (inclusive)</label>
+                <input type="date" id="device-del-hasta" style="width:100%;">
+            </div>
+            <div id="device-delete-preview" class="delete-preview-msg" style="margin:.5rem 0;"></div>
+            <div class="delete-actions">
+                <button type="button" id="btn-device-preview" class="btn-secondary">Ver previsualización</button>
+                <button type="button" id="btn-device-confirm" class="btn-danger" disabled>Eliminar</button>
+            </div>
+        </div>
+    </section>
+
     <section id="graficas" class="seccion">
         <h2>Gráficas comparativas</h2>
         <p style="font-size:0.85rem;color:var(--text-muted);margin-top:0.5rem;">Coin y Premios (referencia para reponer peluches)</p>
@@ -172,5 +192,68 @@ window.REPORT_CONFIG = { deviceId: <?php echo json_encode($deviceId); ?>, idDisp
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="../../assets/js/navbar.js"></script>
 <script src="../../assets/js/report.js"></script>
+<script>
+(function() {
+  const cfg = window.REPORT_CONFIG;
+  if (!cfg || !cfg.deviceId) return;
+  const hasta = document.getElementById('device-del-hasta');
+  const preview = document.getElementById('device-delete-preview');
+  const btnPreview = document.getElementById('btn-device-preview');
+  const btnConfirm = document.getElementById('btn-device-confirm');
+
+  hasta.addEventListener('change', () => { btnConfirm.disabled = true; preview.textContent = ''; });
+
+  btnPreview.addEventListener('click', function() {
+    const fecha = hasta.value;
+    if (!fecha) { preview.textContent = 'Seleccioná una fecha.'; preview.className = 'delete-preview-msg delete-preview-warn'; return; }
+    this.disabled = true;
+    this.textContent = 'Consultando…';
+    fetch(`get_report.php?device_id=${encodeURIComponent(cfg.deviceId)}&fechaFin=${fecha}`)
+      .then(r => r.json())
+      .then(data => {
+        const n = data.count ?? (data.reports || []).length;
+        if (n === 0) {
+          preview.textContent = 'No hay registros hasta esa fecha.';
+          preview.className = 'delete-preview-msg delete-preview-warn';
+          btnConfirm.disabled = true;
+        } else {
+          preview.innerHTML = `Se eliminarán <strong>${n}</strong> registro${n > 1 ? 's' : ''} hasta ${fecha}.`;
+          preview.className = 'delete-preview-msg delete-preview-danger';
+          btnConfirm.disabled = false;
+        }
+      })
+      .catch(() => { preview.textContent = 'Error al consultar.'; preview.className = 'delete-preview-msg delete-preview-warn'; })
+      .finally(() => { this.disabled = false; this.textContent = 'Ver previsualización'; });
+  });
+
+  btnConfirm.addEventListener('click', function() {
+    const fecha = hasta.value;
+    if (!fecha) return;
+    if (!confirm(`¿Eliminar los registros de esta máquina hasta ${fecha}?`)) return;
+    this.disabled = true;
+    this.textContent = 'Eliminando…';
+    fetch('delete_reports.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'device', device_id: cfg.deviceId, fecha_hasta: fecha })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          preview.innerHTML = '✓ ' + data.message;
+          preview.className = 'delete-preview-msg delete-preview-ok';
+          hasta.value = '';
+          if (typeof cargarReportes === 'function') cargarReportes();
+          if (typeof cargarCierresDiarios === 'function') cargarCierresDiarios();
+        } else {
+          preview.textContent = 'Error: ' + (data.error || 'desconocido');
+          preview.className = 'delete-preview-msg delete-preview-warn';
+        }
+      })
+      .catch(() => { preview.textContent = 'Error de red.'; preview.className = 'delete-preview-msg delete-preview-warn'; })
+      .finally(() => { this.disabled = false; this.textContent = 'Eliminar'; });
+  });
+})();
+</script>
 </body>
 </html>
