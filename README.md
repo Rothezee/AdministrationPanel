@@ -48,8 +48,8 @@ Carpetas principales:
   - `get_close_expendedora.php`: obtiene cierres diarios.
   - `get_subcierre_expendedora.php`: obtiene subcierres parciales por día.
 
-- `Backend/mercadopago/`  
-  Integración con Mercado Pago (pagos, webhooks, comunicación con ESP32 cuando aplica).
+- `src/mercadopago/`  
+  Mercado Pago: crear preferencia (`create_payment.php`), webhook y acreditación por **MQTT** (`mqtt_credit.php` → tópico `maquinas/{device_id}/credit`). Requiere `composer install` en `src/devices/` (cliente MQTT PHP).
 
 Requisitos
 ----------
@@ -68,7 +68,7 @@ Instalación básica
    - Crea la BD MySQL e importa `sistemadeadministracion.sql`.
    - Copia `conn/config.example.php` → `conn/config.php` y completa usuario/contraseña.
    - Si usas código legacy con mysqli: copia `conn/connection.example.php` → `conn/connection.php`.
-3. **Instala dependencias MQTT** (si usás el listener): `composer require php-mqtt/client` en `src/devices/`.
+3. **Instala dependencias MQTT** (listener + acreditación MP): en `src/devices/` ejecutá `composer install` o `composer require php-mqtt/client`. Variables opcionales: `MQTT_BROKER`, `MQTT_PORT`, `MQTT_TOPIC_PREFIX`, `MQTT_CREDIT_SUBTOPIC`.
 4. **Configura tus ESP32** para que:
    - Envíen JSON al endpoint HTTP que expone el servidor (`api_receptor.php`), o
    - Publiquen en el broker MQTT (según la configuración de `mqtt_listener.php`), usando el formato de mensaje esperado.

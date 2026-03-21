@@ -45,9 +45,9 @@ require $autoloader;
 use PhpMqtt\Client\MQTTClient;
 use PhpMqtt\Client\ConnectionSettings;
 
-// ===== CONFIGURACIÓN =====
-$mqtt_server    = 'broker.emqx.io'; 
-$mqtt_port      = 1883;
+// ===== CONFIGURACIÓN (alineado con src/mercadopago/mqtt_credit.php) =====
+$mqtt_server    = getenv('MQTT_BROKER') ?: 'broker.emqx.io';
+$mqtt_port      = (int) (getenv('MQTT_PORT') ?: 1883);
 
 // URL del api_receptor (para curl). Ajustar si el panel está en otra ruta.
 $backend_base = getenv('MQTT_BACKEND_URL') ?: 'http://localhost/AdministrationPanel';

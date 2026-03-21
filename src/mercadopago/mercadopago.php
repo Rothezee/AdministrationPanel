@@ -1,16 +1,14 @@
 <?php
 require_once dirname(__DIR__, 2) . '/config.php';
-require_once 'esp32_communication.php';
+require_once __DIR__ . '/mqtt_credit.php';
 
 class MercadoPagoHandler {
     private $accessToken;
     private $db;
-    private $esp32;
 
     public function __construct($db) {
         $this->accessToken = Config::MP_ACCESS_TOKEN;
         $this->db = $db;
-        $this->esp32 = new ESP32Communication($db);
         
         // Configurar zona horaria
         date_default_timezone_set(Config::TIMEZONE);
@@ -98,10 +96,13 @@ class MercadoPagoHandler {
             // Guardar el intento en DB
             $this->savePaymentRequest($data['id'], $machineId, $amount);
 
+            $initPoint = Config::IS_PRODUCTION ? $data['init_point'] : $data['sandbox_init_point'];
+
             return [
                 'success' => true,
                 'preference_id' => $data['id'],
-                'init_point' => Config::IS_PRODUCTION ? $data['init_point'] : $data['sandbox_init_point'],
+                'init_point' => $initPoint,
+                'qr_payload' => $initPoint,
                 'qr_code' => $data['qr_code'] ?? null,
                 'qr_code_base64' => $data['qr_code_base64'] ?? null,
                 'external_reference' => $machineId,
@@ -204,31 +205,30 @@ class MercadoPagoHandler {
             ");
             $stmt->execute([$paymentId, $machineId, $amount]);
 
-            // Enviar crédito al ESP32
-            $result = $this->esp32->sendCreditToMachine($machineId, $amount);
-            
+            $result = MqttCreditPublisher::publishCredit((string) $machineId, (float) $amount, (string) $paymentId);
+
             if ($result['success']) {
-                // Registrar transacción exitosa
-                $this->logTransaction($machineId, $amount, 'success', 'Crédito enviado correctamente');
-                
-                error_log("✅ Crédito enviado exitosamente a máquina $machineId por $$amount");
+                $detail = isset($result['topic']) ? ('MQTT ' . $result['topic']) : 'MQTT';
+                $this->logTransaction($machineId, $amount, 'success', $detail);
+
+                error_log("✅ Crédito publicado por MQTT a máquina $machineId por $$amount");
                 return [
                     'success' => true,
-                    'message' => 'Pago procesado y crédito enviado',
+                    'message' => 'Pago procesado y crédito publicado por MQTT',
                     'machine_id' => $machineId,
                     'amount' => $amount,
-                    'payment_id' => $paymentId
-                ];
-            } else {
-                // Registrar transacción fallida
-                $this->logTransaction($machineId, $amount, 'failed', $result['error']);
-                
-                error_log("❌ Error enviando crédito a máquina $machineId: " . $result['error']);
-                return [
-                    'success' => false,
-                    'error' => 'Pago aprobado pero error enviando crédito: ' . $result['error']
+                    'payment_id' => $paymentId,
+                    'mqtt_topic' => $result['topic'] ?? null,
                 ];
             }
+
+            $this->logTransaction($machineId, $amount, 'failed', $result['error'] ?? 'MQTT');
+
+            error_log('❌ Error MQTT crédito máquina ' . $machineId . ': ' . ($result['error'] ?? ''));
+            return [
+                'success' => false,
+                'error' => 'Pago aprobado pero error publicando crédito por MQTT: ' . ($result['error'] ?? 'desconocido'),
+            ];
         } catch (Exception $e) {
             error_log("Error procesando pago aprobado: " . $e->getMessage());
             return [
