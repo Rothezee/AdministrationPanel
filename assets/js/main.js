@@ -392,6 +392,32 @@ function buildModal() {
           <textarea id="cfg-description" rows="3"
             placeholder="Ej: Máquina de la entrada, lado izquierdo. Revisada en marzo 2025."></textarea>
         </div>
+        <div id="grua-remote-config-section" class="grua-remote-config" style="display:none;">
+          <h3 class="grua-remote-config-title">Parámetros en la máquina (MQTT)</h3>
+          <p class="grua-remote-config-hint">Solo aplica a grúas registradas en la base como tipo grúa. La máquina debe estar online en el broker. QoS 0: si está apagada, el mensaje puede perderse.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cfg-grua-pago">Pago (1–99)</label>
+              <input type="number" id="cfg-grua-pago" min="1" max="99" step="1" value="20">
+            </div>
+            <div class="form-group">
+              <label for="cfg-grua-fuerza">Fuerza (5–101)</label>
+              <input type="number" id="cfg-grua-fuerza" min="5" max="101" step="1" value="50">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cfg-grua-t-agarre">Tiempo agarre ms (500–5000)</label>
+              <input type="number" id="cfg-grua-t-agarre" min="500" max="5000" step="10" value="2000">
+            </div>
+            <div class="form-group">
+              <label for="cfg-grua-t-fuerte">Tiempo fuerza fuerte ms (0–5000)</label>
+              <input type="number" id="cfg-grua-t-fuerte" min="0" max="5000" step="10" value="0">
+            </div>
+          </div>
+          <div id="cfg-grua-mqtt-msg" class="delete-preview-msg" style="margin:.5rem 0;display:none;" role="status"></div>
+          <button type="button" class="btn-secondary" id="cfg-grua-send-mqtt">Enviar por MQTT</button>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn-modal-cancel" id="modal-btn-cancel">Cancelar</button>
@@ -406,6 +432,8 @@ function buildModal() {
   document.getElementById('modal-btn-close') .addEventListener('click', closeConfigModal);
   document.getElementById('modal-btn-cancel').addEventListener('click', closeConfigModal);
   document.getElementById('modal-btn-save')  .addEventListener('click', saveModalConfig);
+  document.getElementById('cfg-type').addEventListener('change', updateGruaRemoteSectionVisibility);
+  document.getElementById('cfg-grua-send-mqtt').addEventListener('click', sendGruaConfigMqtt);
 
   // Click outside box → close
   overlay.addEventListener('click', e => {
@@ -414,6 +442,60 @@ function buildModal() {
 }
 
 let _currentModalDeviceId = null;
+
+function updateGruaRemoteSectionVisibility() {
+  const sel = document.getElementById('cfg-type');
+  const sec = document.getElementById('grua-remote-config-section');
+  if (!sel || !sec) return;
+  sec.style.display = sel.value === 'maquina' ? 'block' : 'none';
+}
+
+function sendGruaConfigMqtt() {
+  const id = _currentModalDeviceId;
+  if (!id) return;
+  const msgEl = document.getElementById('cfg-grua-mqtt-msg');
+  const btn = document.getElementById('cfg-grua-send-mqtt');
+  const pago = parseInt(document.getElementById('cfg-grua-pago').value, 10);
+  const tAgarre = parseInt(document.getElementById('cfg-grua-t-agarre').value, 10);
+  const tFuerte = parseInt(document.getElementById('cfg-grua-t-fuerte').value, 10);
+  const fuerza = parseInt(document.getElementById('cfg-grua-fuerza').value, 10);
+  if (msgEl) {
+    msgEl.style.display = 'none';
+    msgEl.textContent = '';
+  }
+  btn.disabled = true;
+  fetch('publish_grua_config.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      device_id: id,
+      pago,
+      t_agarre: tAgarre,
+      t_fuerte: tFuerte,
+      fuerza,
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!msgEl) return;
+      msgEl.style.display = 'block';
+      if (data.success) {
+        msgEl.textContent = data.message || 'Enviado.';
+        msgEl.className = 'delete-preview-msg delete-preview-ok';
+      } else {
+        msgEl.textContent = 'Error: ' + (data.error || 'desconocido');
+        msgEl.className = 'delete-preview-msg delete-preview-warn';
+      }
+    })
+    .catch(() => {
+      if (msgEl) {
+        msgEl.style.display = 'block';
+        msgEl.textContent = 'Error de red.';
+        msgEl.className = 'delete-preview-msg delete-preview-warn';
+      }
+    })
+    .finally(() => { btn.disabled = false; });
+}
 
 function openConfigModal(deviceId) {
   buildModal(); // no-op if already built
@@ -431,6 +513,8 @@ function openConfigModal(deviceId) {
   document.getElementById('cfg-group').value       = info.groupName   || '';
   document.getElementById('cfg-type').value        = info.type        || 'maquina';
   document.getElementById('cfg-description').value = info.description || '';
+
+  updateGruaRemoteSectionVisibility();
 
   // Populate datalists
   const knownLocals = getKnownLocals(cfg);

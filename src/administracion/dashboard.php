@@ -140,6 +140,7 @@ if (!empty($_SESSION['id_admin'])) {
         <ul class="sidebar-submenu open" id="admin-menu">
           <li><button class="sidebar-link" id="btn-borrado-global">🗑 Limpiar datos (global)</button></li>
           <li><button class="sidebar-link" id="btn-borrar-maquina">🗑 Borrar máquina</button></li>
+          <li><button class="sidebar-link" id="btn-ota-firmware">⬆ Actualizar firmware (OTA)</button></li>
         </ul>
       </div>
       <?php if ($isSuperAdmin): ?>
@@ -221,6 +222,41 @@ if (!empty($_SESSION['id_admin'])) {
     </div>
     <div class="modal-footer">
       <button class="btn-modal-cancel" id="subscription-modal-cancel">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ MODAL OTA FIRMWARE -->
+<div id="ota-firmware-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <h2 class="modal-title">⬆ Actualizar firmware (OTA)</h2>
+      <button class="modal-close" id="ota-firmware-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.82rem;color:var(--text-secondary);line-height:1.6;margin-bottom:1rem">
+        Se publicará un comando por MQTT a las máquinas elegidas. Cada ESP debe estar en línea, con WiFi estable y firmware que escuche el subtopic OTA.
+        <strong>La máquina reiniciará y flasheará</strong> — usá la rama correcta para el tipo de equipo.
+      </p>
+      <div class="form-group">
+        <label for="ota-branch-select">Rama de firmware (GitHub / manifiesto)</label>
+        <select id="ota-branch-select" style="width:100%;min-width:unset;padding:.4rem"></select>
+        <p id="ota-branch-hint" style="font-size:.75rem;color:var(--text-muted);margin-top:.35rem"></p>
+      </div>
+      <div class="form-group">
+        <label>Máquinas</label>
+        <div id="ota-device-list" class="delete-device-list" style="max-height:220px;overflow:auto"></div>
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="ota-confirm-danger"> Entiendo que las máquinas marcadas pueden reiniciar y actualizar firmware ahora.
+        </label>
+      </div>
+      <div id="ota-result" class="delete-preview-msg" style="margin-top:.5rem;white-space:pre-wrap"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" id="ota-firmware-cancel">Cerrar</button>
+      <button class="btn-danger" id="ota-firmware-send" disabled>Publicar OTA</button>
     </div>
   </div>
 </div>
@@ -308,6 +344,123 @@ if (!empty($_SESSION['id_admin'])) {
   document.getElementById('delete-device-cancel').addEventListener('click', () => { deviceModal.style.display = 'none'; });
   deviceModal.addEventListener('click', e => { if (e.target === deviceModal) deviceModal.style.display = 'none'; });
   function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  /* ── Modal OTA firmware ── */
+  const otaModal = document.getElementById('ota-firmware-modal');
+  const otaBranch = document.getElementById('ota-branch-select');
+  const otaList = document.getElementById('ota-device-list');
+  const otaConfirm = document.getElementById('ota-confirm-danger');
+  const otaSend = document.getElementById('ota-firmware-send');
+  const otaResult = document.getElementById('ota-result');
+  const otaBranchHint = document.getElementById('ota-branch-hint');
+
+  function otaClose() {
+    otaModal.style.display = 'none';
+    otaConfirm.checked = false;
+    otaSend.disabled = true;
+    otaResult.textContent = '';
+    otaResult.className = 'delete-preview-msg';
+  }
+
+  function otaRefreshSendState() {
+    const anyChecked = otaList.querySelectorAll('input[type=checkbox]:checked').length > 0;
+    otaSend.disabled = !(otaConfirm.checked && anyChecked && otaBranch.value);
+  }
+
+  document.getElementById('btn-ota-firmware').addEventListener('click', () => {
+    otaResult.textContent = '';
+    otaBranch.innerHTML = '<option value="">Cargando ramas…</option>';
+    otaList.innerHTML = '';
+    otaBranchHint.textContent = '';
+    otaModal.style.display = 'flex';
+    otaConfirm.checked = false;
+    otaSend.disabled = true;
+
+    Promise.all([
+      fetch('list_ota_branches.php').then(r => r.json()),
+      fetch('../devices/get_all_devices.php').then(r => r.json())
+    ]).then(([brData, devData]) => {
+      otaBranch.innerHTML = '';
+      if (!brData.success || !(brData.branches || []).length) {
+        otaBranch.innerHTML = '<option value="">(sin ramas)</option>';
+        otaResult.textContent = brData.error || 'No se pudieron cargar las ramas OTA.';
+        otaResult.className = 'delete-preview-msg delete-preview-warn';
+        return;
+      }
+      brData.branches.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = `${b.id} — v${b.version}`;
+        otaBranch.appendChild(opt);
+      });
+      if (brData.manifest_url) otaBranchHint.textContent = 'Manifiesto: ' + brData.manifest_url;
+
+      (devData.devices || []).forEach(d => {
+        const row = document.createElement('label');
+        row.className = 'delete-device-row';
+        row.style.cursor = 'pointer';
+        const id = d.device_id;
+        row.innerHTML = `<input type="checkbox" name="ota-dev" value="${escapeHtml(id)}" style="margin-right:.5rem"> <span>${escapeHtml(id)}</span>`;
+        row.querySelector('input').addEventListener('change', otaRefreshSendState);
+        otaList.appendChild(row);
+      });
+      if (!otaList.children.length) otaList.innerHTML = '<p style="color:var(--text-muted)">No hay máquinas registradas.</p>';
+      otaRefreshSendState();
+    }).catch(() => {
+      otaResult.textContent = 'Error de red al cargar ramas o dispositivos.';
+      otaResult.className = 'delete-preview-msg delete-preview-warn';
+    });
+  });
+
+  document.getElementById('ota-firmware-close').addEventListener('click', otaClose);
+  document.getElementById('ota-firmware-cancel').addEventListener('click', otaClose);
+  otaModal.addEventListener('click', e => { if (e.target === otaModal) otaClose(); });
+  otaBranch.addEventListener('change', otaRefreshSendState);
+  otaConfirm.addEventListener('change', otaRefreshSendState);
+
+  document.getElementById('ota-firmware-send').addEventListener('click', function () {
+    const branch = otaBranch.value;
+    const ids = Array.from(otaList.querySelectorAll('input[name=ota-dev]:checked')).map(el => el.value);
+    if (!branch || !ids.length || !otaConfirm.checked) return;
+
+    const ok = confirm(
+      `¿Publicar actualización OTA por MQTT?\n\nRama: ${branch}\nMáquinas: ${ids.join(', ')}\n\nLas máquinas pueden reiniciar y flashear firmware.`
+    );
+    if (!ok) return;
+
+    this.disabled = true;
+    otaResult.textContent = 'Publicando…';
+    otaResult.className = 'delete-preview-msg';
+
+    fetch('publish_ota_update.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_ids: ids, branch })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.results) {
+          otaResult.textContent = data.error || 'Error desconocido';
+          otaResult.className = 'delete-preview-msg delete-preview-warn';
+          return;
+        }
+        const lines = data.results.map(r =>
+          (r.success ? '✓ ' : '✗ ') + r.device_id + (r.error ? ': ' + r.error : '')
+        );
+        otaResult.textContent = lines.join('\n');
+        otaResult.className = data.success
+          ? 'delete-preview-msg delete-preview-ok'
+          : 'delete-preview-msg delete-preview-warn';
+      })
+      .catch(err => {
+        otaResult.textContent = 'Red: ' + err.message;
+        otaResult.className = 'delete-preview-msg delete-preview-warn';
+      })
+      .finally(() => {
+        this.disabled = false;
+        otaRefreshSendState();
+      });
+  });
 
   /* ── Navbar mobile ── */
   document.getElementById('navbar-toggler').addEventListener('click', () => {

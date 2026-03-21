@@ -587,6 +587,24 @@ main { max-width: 1600px; margin: 0 auto; padding: 1.5rem; display: flex; flex-d
   gap: 0.75rem;
 }
 
+.grua-remote-config {
+  margin-top: 0.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+.grua-remote-config-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.35rem;
+}
+.grua-remote-config-hint {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0 0 0.75rem;
+}
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

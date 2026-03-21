@@ -86,6 +86,24 @@ function device_id_from_topic($topic) {
     return null;
 }
 
+/** Downlink de configuración (panel → ESP). No debe pasar por api_receptor. */
+function is_mqtt_config_downlink_topic($topic) {
+    $sub = trim((string)(getenv('MQTT_CONFIG_SUBTOPIC') ?: 'config'), '/');
+    if ($sub === '') {
+        return false;
+    }
+    return (bool) preg_match('#/' . preg_quote($sub, '#') . '$#', (string) $topic);
+}
+
+/** Downlink OTA (panel → ESP). No debe pasar por api_receptor. */
+function is_mqtt_ota_downlink_topic($topic) {
+    $sub = trim((string)(getenv('MQTT_OTA_SUBTOPIC') ?: 'ota'), '/');
+    if ($sub === '') {
+        return false;
+    }
+    return (bool) preg_match('#/' . preg_quote($sub, '#') . '$#', (string) $topic);
+}
+
 /**
  * Valida y normaliza formato API del ESP Gigga.
  * Retorna array listo para api_receptor o null si no cumple.
@@ -178,6 +196,18 @@ $callback_general = function ($topic, $message) use ($backend_url_api, &$last_pa
 
     // maquinas/status: ESP publica estado (online/offline o 1/0). No es telemetría, ignorar sin log.
     if ($topic === 'maquinas/status' && in_array($message, ['online', 'offline', '1', '0'], true)) {
+        return;
+    }
+
+    // Panel → ESP: configuración remota; si se procesara como legacy generaría telemetría falsa.
+    if (is_mqtt_config_downlink_topic($topic)) {
+        debug_log("MQTT <- $topic | [SKIP] tópico config (downlink), no enviar a API");
+        return;
+    }
+
+    // Panel → ESP: comando OTA (retained o replay); no es telemetría.
+    if (is_mqtt_ota_downlink_topic($topic)) {
+        debug_log("MQTT <- $topic | [SKIP] tópico ota (downlink), no enviar a API");
         return;
     }
 
